@@ -42,11 +42,8 @@ Olmolo uses `appsettings.json` for its configuration based on the following sche
 
 In this configuration, Olmolo will ...
  - check every minute if the `qwen3:14b` model is loaded and apply two rules:
-   - make sure the model is **loaded** whenever **more than 15GB VRAM** are free
-   - make sure the model's `keep_alive` is **extended** whenever as long as more than 15GB VRAM are free
+   - make sure the model gets and stays **loaded** as long as **more than 15GB VRAM** are free
    - make sure the model is **unloaded** whenever **less than 10GB VRAM** are free
-
-> Any `keep_alive` that is greater than the check interval will keep the model loaded forever, as long as the rule's condition are met.
 
 The second rule is just to demonstrate unloading. You will most likely not need this.
 
