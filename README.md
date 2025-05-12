@@ -28,7 +28,7 @@ Olmolo uses `appsettings.json` for its configuration. Here is a sample configura
       "Rules": [
         {
           "VramFree": ">15GB",      // Condition based on available VRAM
-          "KeepAlive": "60m"        // load and keep the model for 1 hour
+          "KeepAlive": "60m"        // will keep the model loaded forever (extended hourly)
         },
         {
           "VramFree": "<10GB",
