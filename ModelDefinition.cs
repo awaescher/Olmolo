@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics;
 
-namespace owk;
+namespace okai;
 
 /// <summary>
 /// Configuration settings for the Ollama model management system.
@@ -22,6 +22,8 @@ public class Settings
 	/// The collection of models to be managed by the system.
 	/// </summary>
 	public IEnumerable<ModelDefinition> Models { get; set; } = [];
+
+	public string TotalVram { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -33,29 +35,31 @@ public class ModelDefinition
 	/// <summary>
 	/// The name of the model as recognized by Ollama.
 	/// </summary>
-	public string Name { get; set; }
+	public string Name { get; set; } = string.Empty;
 
 	/// <summary>
 	/// The conditions under which this model should be activated.
 	/// </summary>
-	public ActivationCondition Condition { get; set; }
+	public IEnumerable<Rule> Rules { get; set; } = [];
+}
+
+/// <summary>
+/// Specifies the conditions under which a model should be activated.
+/// </summary>
+[DebuggerDisplay("If vram free {VramFree}, then set keep_alive to {KeepAlive}")]
+public class Rule
+{
+	/// <summary>
+	/// The amount of VRAM used by Ollama in total.
+	/// Use operators and values like "<50GB", "<=50GB", ">=50GB", ">50GB", "=50GB" or "!=50GB"
+	/// </summary>
+	public string VramFree { get; set; } = string.Empty;
 
 	/// <summary>
 	/// How long to keep the model loaded in memory after last use.
 	/// Format is a duration string (e.g., "10m" for 10 minutes).
 	/// </summary>
 	public string KeepAlive { get; set; } = "10m";
-}
 
-/// <summary>
-/// Specifies the conditions under which a model should be activated.
-/// </summary>
-[DebuggerDisplay("VramGbInUse {VramGbInUse}")]
-public class ActivationCondition
-{
-	/// <summary>
-	/// The amount of VRAM (in GB) used by Ollama in total.
-	///  Use operators and values like "<50", "<=50", ">=50", ">50", "=50" or "!=50"
-	/// </summary>
-	public string VramGbInUse { get; set; } = string.Empty;
+	public bool IsUnloadingRule => KeepAlive == "0" || KeepAlive == "0s" || KeepAlive == "0m" || KeepAlive == "0h";
 }
