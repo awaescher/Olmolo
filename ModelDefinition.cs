@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics;
 
-namespace okai;
+namespace olmolo;
 
 /// <summary>
 /// Configuration settings for the Ollama model management system.

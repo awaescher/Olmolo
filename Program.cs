@@ -3,7 +3,7 @@ using Microsoft.Extensions.Configuration;
 using OllamaSharp;
 using OllamaSharp.Models;
 
-namespace okai;
+namespace olmolo;
 
 internal class Program
 {

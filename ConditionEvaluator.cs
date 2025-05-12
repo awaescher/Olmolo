@@ -1,4 +1,4 @@
-﻿namespace okai;
+﻿namespace olmolo;
 
 public static class ConditionEvaluator
 {
