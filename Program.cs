@@ -3,7 +3,7 @@ using Microsoft.Extensions.Configuration;
 using OllamaSharp;
 using OllamaSharp.Models;
 
-namespace owk;
+namespace okai;
 
 internal class Program
 {
@@ -16,76 +16,82 @@ internal class Program
 		var settings = new Settings();
 		config.Bind(settings);
 
+		if (settings.CheckInterval < TimeSpan.FromMinutes(1))
+		{
+			Log("Warning: The check interval might be too short so that Ollama might not");
+			Log("         finish loading or unloading models until the next check.");
+			Log("         This might lead to unwanted behavior like unwillingly");
+			Log("         reactivating models that Ollama is unloading at that very moment.");
+			Log("         Keep an eye on the logs and consider increasing the check interval.");
+		}
+
 		var cancellationSource = new CancellationTokenSource();
 
 		var client = new OllamaApiClient(settings.Uri);
+
+		var vram = ConditionEvaluator.Parse(settings.TotalVram);
+		var totalVramGb = vram.Value;
 
 		while (!cancellationSource.IsCancellationRequested)
 		{
 			var watch = System.Diagnostics.Stopwatch.StartNew();
 
-			var runningModels = await client.ListRunningModelsAsync(cancellationSource.Token);
-			var runningModelCount = runningModels.Count();
-			var usedVramGb = runningModels.Sum(m => m.SizeVram) / 1000000000;
-			Log($"{runningModelCount} {(runningModelCount == 1 ? "model" : "models")} running with {usedVramGb} GB in total.");
+			var activeModels = await client.ListRunningModelsAsync(cancellationSource.Token);
+			var activeModelCount = activeModels.Count();
+			var usedVramGb = activeModels.Sum(m => m.SizeVram) / 1000000000;
+			var freeVramGb = totalVramGb - usedVramGb;
 
-			if (runningModelCount == 0)
-				Log("No models running.");
-			else
-				Log($"{usedVramGb} GB VRAM in use by {runningModelCount} running {(runningModelCount == 1 ? "model" : "models")}: {string.Join(", ", runningModels.Select(m => m.Name))}");
+			Log($"Active models:  {(activeModels.Any() ? string.Join(", ", activeModels.Select(m => m.Name)) : "-")}");
+			Log($"VRAM total:     {totalVramGb} GB");
+			Log($"VRAM used:      {usedVramGb} GB");
+			Log($"VRAM free:      {freeVramGb} GB");
 
 			foreach (var model in settings.Models)
 			{
-				var isRunning = runningModels.Any(m => m.Name.Equals(model.Name, StringComparison.OrdinalIgnoreCase));
-				var shouldUnload = model.KeepAlive == "0";
+				var run = activeModels.FirstOrDefault(m => m.Name.Equals(model.Name, StringComparison.OrdinalIgnoreCase));
 
-				//if (isRunning)
-				//{
-				//	if (shouldUnload)
-				//	{
-				//		Log($"Unloading {model.Name} ...");
-				//		var request = new GenerateRequest { Prompt = "Respond with a single character /no_think", Model = model.Name, KeepAlive = model.KeepAlive, Stream = false };
-				//		client.GenerateAsync(request, cancellationSource.Token).StreamToEndAsync().SafeFireAndForget();
-				//	}
-				//	else
-				//	{
-				//		Log($"{model.Name} is already running.");
-				//	}
-				//}
-
-				//if (isRunning || shouldUnload)
-				//	continue;
-
-				if (ConditionEvaluator.CheckNumericCondition(model.Condition.VramGbInUse, usedVramGb))
+				var currentRule = 0;
+				foreach (var rule in model.Rules)
 				{
-					if (isRunning)
+					currentRule++;
+
+					// skip unloading if the model is not active
+					if (rule.IsUnloadingRule && run is null)
+						continue;
+
+					// skip calling if the model is active and does not expire soon
+					if (!rule.IsUnloadingRule && run?.ExpiresAt is DateTime exp && exp > DateTime.UtcNow + settings.CheckInterval)
 					{
-						Log($"Waking up '{model.Name}' ...");
+						Log($"No need to extend keep_alive for {model.Name} now");
+						Log($" └ because the remaining keep_alive (until {exp.ToLocalTime().ToShortTimeString()}) is longer than the check interval");
+						continue;
 					}
-					else
+
+					if (ConditionEvaluator.CheckNumericCondition(rule.VramFree, freeVramGb))
 					{
-						if (shouldUnload)
-							Log($"Unloading '{model.Name}' ...");
+						var verb = rule.IsUnloadingRule ? "Unloading" : (run is null ? "Loading" : "Extending");
+						Log($"{verb} {model.Name} with keep_alive={rule.KeepAlive}");
+						if (rule.IsUnloadingRule || run is null)
+							Log($" └ because free vram is {rule.VramFree}.");
 						else
-							Log($"Updating keep alive '{model.Name}' ...");
-					}
+							Log($" └ because free vram is {rule.VramFree} and the model is expiring at {run!.ExpiresAt.ToLocalTime().ToShortTimeString()} which is before the next iteration.");
 
-					var request = new GenerateRequest { Prompt = "Respond with a single character /no_think", Model = model.Name, KeepAlive = model.KeepAlive, Stream = false };
-					client.GenerateAsync(request, cancellationSource.Token).StreamToEndAsync().SafeFireAndForget();
-				}
-				else
-				{
-					Log($"{model.Name} is not running but conditions are not met.");
+						var request = new GenerateRequest { Prompt = "Respond with a single character /no_think", Model = model.Name, KeepAlive = rule.KeepAlive, Stream = false };
+						client.GenerateAsync(request, cancellationSource.Token).StreamToEndAsync().SafeFireAndForget(Log);
+					}
 				}
 			}
 
 			watch.Stop();
 
-			Log($"Sleeping for {settings.CheckInterval - watch.Elapsed}.");
+			Log($"Done. Sleeping for {settings.CheckInterval - watch.Elapsed}.");
+			Log("");
+
 			await Task.Delay(settings.CheckInterval - watch.Elapsed);
-			Log("-----");
 		}
 	}
 
-	private static void Log(string message) => Console.WriteLine($"{DateTime.Now}: {message}");
+	private static void Log(string message) => Console.WriteLine(string.IsNullOrEmpty(message) ? "" : $"{DateTime.Now}: {message}");
+
+	private static void Log(Exception exception) => Log("ERROR: " + exception.Message);
 }
