@@ -1,4 +1,5 @@
-﻿using AsyncAwaitBestPractices;
+﻿using System.Text.Json;
+using AsyncAwaitBestPractices;
 using Microsoft.Extensions.Configuration;
 using OllamaSharp;
 using OllamaSharp.Models;
@@ -10,11 +11,15 @@ internal class Program
 	static async Task Main(string[] args)
 	{
 		var config = new ConfigurationBuilder()
-			.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+			.AddEnvironmentVariables()
+			.AddJsonFile("appsettings.json", optional: true)
 			.Build();
 
 		var settings = new Settings();
 		config.Bind(settings);
+		CheckSettings(settings);
+
+		Log(JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
 
 		if (settings.CheckInterval < TimeSpan.FromMinutes(1))
 		{
@@ -27,7 +32,7 @@ internal class Program
 
 		var cancellationSource = new CancellationTokenSource();
 
-		var client = new OllamaApiClient(settings.Uri);
+		var client = new OllamaApiClient(settings.OllamaUri);
 
 		var vram = ConditionEvaluator.Parse(settings.TotalVram);
 		var totalVramGb = vram.Value;
@@ -89,6 +94,21 @@ internal class Program
 
 			await Task.Delay(settings.CheckInterval - watch.Elapsed);
 		}
+	}
+
+	private static void CheckSettings(Settings settings)
+	{
+		if (string.IsNullOrWhiteSpace(settings.OllamaUri?.Host))
+			throw new ArgumentException("Ollama API uri has to be defined!");
+
+		if (!settings.Models.Any())
+			throw new ArgumentException("Models have to be defined");
+
+		if (string.IsNullOrWhiteSpace(settings.TotalVram))
+			throw new ArgumentException("The target machine's total VRAM has to be defined!");
+
+		if (settings.CheckInterval.TotalSeconds < 5)
+			throw new ArgumentException("The check interval has to be at least 5 seconds!");
 	}
 
 	private static void Log(string message) => Console.WriteLine(string.IsNullOrEmpty(message) ? "" : $"{DateTime.Now}: {message}");

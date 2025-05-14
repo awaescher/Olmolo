@@ -1,0 +1,6 @@
+services:
+  olmolo:
+    image: awaescher/olmolo:latest
+    network_mode: host
+    volumes:
+      - ./appsettings.json:/app/appsettings.json
